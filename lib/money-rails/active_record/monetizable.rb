@@ -65,11 +65,6 @@ module MoneyRails
               options[:model_currency] ||
               MoneyRails::Configuration.currency_column[:column_name]
 
-            # Infer currency column from name and postfix
-            if !instance_currency_name && MoneyRails::Configuration.currency_column[:postfix].present?
-              instance_currency_name = "#{name}#{MoneyRails::Configuration.currency_column[:postfix]}"
-            end
-
             instance_currency_name &&= instance_currency_name.to_s
 
             # This attribute allows per column currency values
@@ -282,8 +277,9 @@ module MoneyRails
 
         if (money_currency = money.try(:currency))
           # Update currency iso value if there is an instance currency attribute
-          if instance_currency_name.present? && respond_to?("#{instance_currency_name}=")
-            public_send("#{instance_currency_name}=", money_currency.iso_code)
+          currency_name = instance_currency_name || inferred_currency_column_name(name)
+          if currency_name.present? && respond_to?("#{currency_name}=")
+            public_send("#{currency_name}=", money_currency.iso_code)
           else
             current_currency = public_send("currency_for_#{name}")
             if current_currency != money_currency.id
@@ -298,7 +294,7 @@ module MoneyRails
         instance_variable_set "@#{name}", money
       end
 
-      def currency_for(_name, instance_currency_name, field_currency_name)
+      def currency_for(name, instance_currency_name, field_currency_name)
         if instance_currency_name.present? &&
            respond_to?(instance_currency_name) &&
            Money::Currency.find(public_send(instance_currency_name))
@@ -307,11 +303,22 @@ module MoneyRails
           Money::Currency.find(field_currency_name.call(self))
         elsif field_currency_name
           Money::Currency.find(field_currency_name)
+        elsif (inferred_name = inferred_currency_column_name(name)) &&
+              respond_to?(inferred_name) &&
+              Money::Currency.find(public_send(inferred_name))
+          Money::Currency.find(public_send(inferred_name))
         elsif self.class.respond_to?(:currency)
           self.class.currency
         else
           Money.default_currency
         end
+      end
+
+      # Currency column inferred from the attribute name and the configured
+      # currency column postfix (e.g. "price_currency")
+      def inferred_currency_column_name(name)
+        postfix = MoneyRails::Configuration.currency_column[:postfix]
+        "#{name}#{postfix}" if postfix.present?
       end
     end
   end

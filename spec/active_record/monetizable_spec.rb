@@ -594,6 +594,38 @@ if defined? ActiveRecord
         expect(product.lambda_price.currency.to_s).to eq("CAD")
       end
 
+      context "when a :with_currency field also has an inferred currency column" do
+        let(:product_class) do
+          Class.new(ActiveRecord::Base) do
+            self.table_name = "products"
+
+            monetize :reduced_price_cents, with_currency: lambda(&:sale_price_currency_code)
+          end
+        end
+
+        it "uses the :with_currency value instead of the inferred currency column" do
+          product = product_class.new(sale_price_currency_code: "KRW",
+                                      reduced_price_currency: "USD",
+                                      reduced_price: 20)
+
+          expect(product.reduced_price.cents).to eq(20)
+          expect(product.reduced_price.currency).to eq(Money::Currency.find(:krw))
+          expect(product.reduced_price_currency).to eq("KRW")
+        end
+
+        it "uses the :with_currency value for static currency" do
+          klass = Class.new(ActiveRecord::Base) do
+            self.table_name = "products"
+
+            monetize :reduced_price_cents, with_currency: :krw
+          end
+          product = klass.new(reduced_price_currency: "USD", reduced_price: 20)
+
+          expect(product.reduced_price.cents).to eq(20)
+          expect(product.reduced_price.currency).to eq(Money::Currency.find(:krw))
+        end
+      end
+
       it "overrides default currency with model currency, in fixnum assignments" do
         product.discount_value = 5
         expect(product.save).to be_truthy
